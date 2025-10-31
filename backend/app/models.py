@@ -1,6 +1,7 @@
 import uuid
 import enum
 
+from datetime import date
 from pydantic import EmailStr
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -227,6 +228,7 @@ class DesignItem(DesignItemBase, table=True):
         foreign_key="user.id", nullable=False)
     file_path: str = Field(min_length=1, max_length=511)
     preview_path: str = Field(min_length=1, max_length=255)
+    created_date: date = Field(default_factory=date.today)
 
     creator: User = Relationship(back_populates="design_items")
     company: Company = Relationship(back_populates="design_items")
