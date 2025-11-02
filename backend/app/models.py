@@ -28,7 +28,8 @@ class TagItemLink(SQLModel, table=True):
 
 
 class UserCompanyLink(SQLModel, table=True):
-    company_id: uuid.UUID = Field(foreign_key="company.id", primary_key=True)
+    company_id: uuid.UUID = Field(
+        foreign_key="company.id", primary_key=True, ondelete='CASCADE')
     user_id: uuid.UUID = Field(foreign_key="user.id", primary_key=True)
     role: CompanyRole = CompanyRole.reader
 
@@ -165,7 +166,7 @@ class CompanyBase(SQLModel):
 
 # Properties to receive on Company creation
 class CompanyCreate(CompanyBase):
-    pass
+    status: CompanyStatus = CompanyStatus.public
 
 
 # Properties to receive on Company update
@@ -191,7 +192,6 @@ class Company(CompanyBase, table=True):
 # Properties to return via API, id is always required
 class CompanyPublic(CompanyBase):
     id: uuid.UUID
-    creator_id: uuid.UUID
 
 
 class CompanysPublic(SQLModel):
@@ -274,7 +274,7 @@ class Tag(TagBase, table=True):
         foreign_key="company.id", nullable=False, ondelete="CASCADE")
 
     company: Company = Relationship(back_populates="tags")
-    design_items: list["User"] = Relationship(
+    design_items: list["DesignItem"] = Relationship(
         back_populates="tags", link_model=TagItemLink)
 
 
