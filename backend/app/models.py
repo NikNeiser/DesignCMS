@@ -195,7 +195,7 @@ class CompanyPublic(CompanyBase):
 
 
 class CompanysPublic(SQLModel):
-    data: list[CompanyPublic]
+    data: list[CompanyPublic] | None
     count: int
 
 
