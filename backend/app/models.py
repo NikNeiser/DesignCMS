@@ -171,8 +171,8 @@ class CompanyCreate(CompanyBase):
 
 # Properties to receive on Company update
 class CompanyUpdate(CompanyBase):
-    title: str | None = Field(
-        default=None, min_length=1, max_length=255)  # type: ignore
+    title: str | None = Field(default=None, max_length=255)
+    status: CompanyStatus | None = Field(default=None)  # type: ignore
 
 
 # Database model, database table inferred from class name
@@ -182,11 +182,11 @@ class Company(CompanyBase, table=True):
     is_deleted: bool = False
 
     employee: list["User"] = Relationship(
-        back_populates="companies", link_model=UserCompanyLink)
+        back_populates="companies", link_model=UserCompanyLink, sa_relationship_kwargs={"lazy": "selectin"})
     design_items: list["DesignItem"] | None = Relationship(
-        back_populates="company", cascade_delete=True)
+        back_populates="company", cascade_delete=True, sa_relationship_kwargs={"lazy": "raise"})
     tags: list["Tag"] | None = Relationship(
-        back_populates="company", cascade_delete=True)
+        back_populates="company", cascade_delete=True, sa_relationship_kwargs={"lazy": "raise"})
 
 
 # Properties to return via API, id is always required

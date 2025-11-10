@@ -2,10 +2,12 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from sqlmodel import func, select, exists, or_
+from sqlmodel import func, select, exists, or_, delete
+from sqlalchemy.orm import noload, selectinload
+from app import crud
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Company, CompanyStatus, CompanysPublic, CompanyPublic, CompanyCreate, CompanyUpdate, UserCompanyLink, CompanyRole, Message
+from app.models import Company, CompanyStatus, CompanysPublic, CompanyPublic, CompanyCreate, CompanyUpdate, UserCompanyLink, CompanyRole, Message, User
 
 router = APIRouter(prefix="/company", tags=["company"])
 
@@ -18,6 +20,10 @@ def create_company(
     Create new Company.
     """
     company = Company.model_validate(company_in)
+    if crud.check_company_name_exist(session=session, name=company.title):
+        raise HTTPException(
+            status_code=400, detail=f"Company named {company_in.title} already exists")
+
     link = UserCompanyLink(
         company_id=company.id,
         user_id=current_user.id,
@@ -56,11 +62,30 @@ def update_company(
     """
     Update an company.
     """
-    company = session.get(Company, id)
+    company = session.exec(
+        select(Company)
+        .where(Company.id == id)
+        .options(
+            selectinload(
+                Company.employee.and_(
+                    User.id == current_user.id,
+                    UserCompanyLink.role == CompanyRole.owner
+                )
+            ), noload(Company.design_items), noload(Company.tags)
+        )
+    ).first()
+
     if not company:
         raise HTTPException(status_code=404, detail="company not found")
-    if not current_user.is_superuser and (company.owner_id != current_user.id):
-        raise HTTPException(status_code=400, detail="Not enough permissions")
+
+    if not current_user.is_superuser and len(company.employee) == 0:
+        raise HTTPException(
+            status_code=400, detail="Not enough permissions")
+
+    if company_in.title and company_in.title.lower() != company.title.lower() and crud.check_company_name_exist(session=session, name=company_in.title):
+        raise HTTPException(
+            status_code=400, detail=f"Company named \"{company_in.title}\" already exists")
+
     update_dict = company_in.model_dump(exclude_unset=True)
     company.sqlmodel_update(update_dict)
     session.add(company)
@@ -76,21 +101,20 @@ def delete_company(
     """
     Delete an Company.
     """
-    company = session.get(Company, id)
+    # company = session.get(Company, id)
 
-    if not company:
+    if not crud.company_exist(session=session, id=id):
         raise HTTPException(status_code=404, detail="Company not found")
 
-    user_company_link = session.exec(
-        select(UserCompanyLink).where(
-            UserCompanyLink.company_id == id,
-            UserCompanyLink.user_id == current_user.id
-        )
-    ).first()
+    if not current_user.is_superuser:
+        user_company_role = crud.get_user_company_role(
+            session=session, company_id=id, user_id=current_user.id)
 
-    if not current_user.is_superuser or user_company_link.role != CompanyRole.owner:
-        raise HTTPException(status_code=400, detail="Not enough permissions")
+        if user_company_role or user_company_role != CompanyRole.owner:
+            raise HTTPException(
+                status_code=400, detail="Not enough permissions")
 
-    session.delete(company)
+    statement = delete(Company).where(Company.id == id)
+    session.exec(statement)
     session.commit()
     return Message(message="Company deleted successfully")
