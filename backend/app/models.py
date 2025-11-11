@@ -19,6 +19,12 @@ class CompanyStatus(enum.Enum):
     private = 9
 
 
+class AccessStatus(str, enum.Enum):
+    NOT_FOUND = "not_found"
+    NO_ACCESS = "no_access"
+    ACCESS = "access"
+
+
 # Link Tables -------------------------------------------------
 
 class TagItemLink(SQLModel, table=True):

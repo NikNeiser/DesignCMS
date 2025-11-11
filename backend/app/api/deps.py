@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from typing import Annotated
 
+import uuid
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -11,7 +12,8 @@ from sqlmodel import Session
 from app.core import security
 from app.core.config import settings
 from app.core.db import engine
-from app.models import TokenPayload, User
+from app.models import TokenPayload, User, AccessStatus
+from app.crud import check_company_access
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/login/access-token"
@@ -55,3 +57,16 @@ def get_current_active_superuser(current_user: CurrentUser) -> User:
             status_code=403, detail="The user doesn't have enough privileges"
         )
     return current_user
+
+
+def verify_company_access(
+    company_id: uuid.UUID,
+    current_user: CurrentUser,
+    session: SessionDep
+) -> None:
+    access_status = check_company_access(
+        session=session, company_id=company_id, current_user=current_user)
+    if access_status == AccessStatus.NOT_FOUND:
+        raise HTTPException(status_code=404, detail="Company not found")
+    if access_status == AccessStatus.NO_ACCESS:
+        raise HTTPException(status_code=400, detail="Not enough permissions")

@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from sqlmodel import Session, select, func, exists
+from sqlmodel import Session, select, func, exists, outerjoin, and_
 
 from app.core.security import get_password_hash, verify_password
 from app.models import (
@@ -12,7 +12,9 @@ from app.models import (
     UserUpdate,
     Company,
     CompanyRole,
-    UserCompanyLink
+    UserCompanyLink,
+    CompanyStatus,
+    AccessStatus
 )
 
 
@@ -82,3 +84,22 @@ def get_user_company_role(*, session: Session, company_id: uuid.UUID, user_id: u
         )
     ).first()
     return user_company_role
+
+
+def check_company_access(*, session: Session, company_id: uuid.UUID, current_user: User) -> AccessStatus:
+    if not current_user.is_superuser:
+        statement = select(Company.status, UserCompanyLink.role).\
+            outerjoin(UserCompanyLink, and_(
+                UserCompanyLink.company_id == Company.id,
+                UserCompanyLink.user_id == current_user.id
+            )).\
+            where(Company.id == company_id)
+        result = session.exec(statement).first()
+
+        if not result:
+            return AccessStatus.NOT_FOUND
+
+        if result.status != CompanyStatus.public and not result.role:
+            return AccessStatus.NO_ACCESS
+
+    return AccessStatus.ACCESS
