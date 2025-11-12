@@ -1,12 +1,12 @@
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from sqlmodel import func, select, exists, or_, delete
 from sqlalchemy.orm import noload, selectinload
 from app import crud
 
-from app.api.deps import CurrentUser, SessionDep
+from app.api.deps import CurrentUser, SessionDep, CompanyRoleDep
 from app.models import Company, CompanyStatus, CompanysPublic, CompanyPublic, CompanyCreate, CompanyUpdate, UserCompanyLink, CompanyRole, Message, User
 
 router = APIRouter(prefix="/company", tags=["company"])
@@ -36,51 +36,41 @@ def create_company(
     return company
 
 
-@router.get("/{id}", response_model=CompanyPublic)
-def read_company(session: SessionDep, current_user: CurrentUser, id: uuid.UUID) -> Any:
+@router.get("/{company_id}", response_model=CompanyPublic)
+def read_company(session: SessionDep, company_id: uuid.UUID, role: CompanyRoleDep) -> Any:
     """
     Get Company by ID.
     """
-    company = session.get(Company, id)
-    if not company:
-        raise HTTPException(status_code=404, detail="Company not found")
-    if not current_user.is_superuser and company.is_deleted:
-        raise HTTPException(status_code=400, detail="Company is deleted")
-    if not current_user.is_superuser and (company.status != CompanyStatus.public and not any(c.id == current_user.id for c in company.employee)):
-        raise HTTPException(status_code=400, detail="Not enough permissions")
+    company = session.get(Company, company_id)
     return company
 
 
-@router.put("/{id}", response_model=CompanyPublic)
+@router.put("/{company_id}", response_model=CompanyPublic)
 def update_company(
     *,
     session: SessionDep,
     current_user: CurrentUser,
-    id: uuid.UUID,
+    company_id: uuid.UUID,
     company_in: CompanyUpdate,
+    role: CompanyRoleDep
 ) -> Any:
     """
     Update an company.
     """
-    company = session.exec(
-        select(Company)
-        .where(Company.id == id)
-        .options(
-            selectinload(
-                Company.employee.and_(
-                    User.id == current_user.id,
-                    UserCompanyLink.role == CompanyRole.owner
-                )
-            ), noload(Company.design_items), noload(Company.tags)
-        )
-    ).first()
 
-    if not company:
-        raise HTTPException(status_code=404, detail="company not found")
-
-    if not current_user.is_superuser and len(company.employee) == 0:
+    if not role or role != CompanyRole.owner:
         raise HTTPException(
             status_code=400, detail="Not enough permissions")
+
+    company = session.exec(
+        select(Company)
+        .where(Company.id == company_id)
+        .options(
+            noload(Company.employee),
+            noload(Company.design_items),
+            noload(Company.tags)
+        )
+    ).first()
 
     if company_in.title and company_in.title.lower() != company.title.lower() and crud.check_company_name_exist(session=session, name=company_in.title):
         raise HTTPException(
@@ -94,25 +84,16 @@ def update_company(
     return company
 
 
-@router.delete("/{id}")
+@router.delete("/{company_id}")
 def delete_company(
-    session: SessionDep, current_user: CurrentUser, id: uuid.UUID
+    session: SessionDep, current_user: CurrentUser, company_id: uuid.UUID, role: CompanyRoleDep
 ) -> Message:
     """
     Delete an Company.
     """
-    # company = session.get(Company, id)
-
-    if not crud.company_exist(session=session, id=id):
-        raise HTTPException(status_code=404, detail="Company not found")
-
-    if not current_user.is_superuser:
-        user_company_role = crud.get_user_company_role(
-            session=session, company_id=id, user_id=current_user.id)
-
-        if user_company_role or user_company_role != CompanyRole.owner:
-            raise HTTPException(
-                status_code=400, detail="Not enough permissions")
+    if not role or role != CompanyRole.owner:
+        raise HTTPException(
+            status_code=400, detail="Not enough permissions")
 
     statement = delete(Company).where(Company.id == id)
     session.exec(statement)
