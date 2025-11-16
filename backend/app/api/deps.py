@@ -8,11 +8,12 @@ from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError
 from sqlmodel import Session, select, and_
+from sqlalchemy.orm import noload
 
 from app.core import security
 from app.core.config import settings
 from app.core.db import engine
-from app.models import TokenPayload, User, CompanyRole, Company, UserCompanyLink, CompanyStatus
+from app.models import TokenPayload, User, CompanyRole, Company, UserCompanyLink, CompanyStatus, EmployeeAccess
 from app.crud import company_exist
 
 reusable_oauth2 = OAuth2PasswordBearer(
@@ -40,7 +41,17 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Could not validate credentials",
         )
-    user = session.get(User, token_data.sub)
+    user = session.exec(
+        select(User)
+        .where(User.id == token_data.sub, User.is_delited == False)
+        .options(
+            noload(User.items),
+            noload(User.companies),
+            noload(User.design_items),
+            noload(User.is_delited)
+        )
+    ).first()
+    # user = session.get(User, token_data.sub)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if not user.is_active:
@@ -51,42 +62,44 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+def get_current_employee(session: SessionDep, token: TokenDep, company_id: uuid.UUID) -> EmployeeAccess:
+    try:
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
+        )
+        token_data = TokenPayload(**payload)
+    except (InvalidTokenError, ValidationError):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Could not validate credentials",
+        )
+
+    statement = select(User.is_superuser, Company.status, UserCompanyLink.role)\
+        .select_from(User).outerjoin(Company, Company.id == company_id)\
+        .outerjoin(UserCompanyLink,
+                   and_(
+                       UserCompanyLink.company_id == Company.id,
+                       UserCompanyLink.user_id == User.id))\
+        .where(User.id == token_data.sub, User.is_delited == False)
+
+    result = session.exec(statement).first()
+
+    if not result:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not result.status:
+        raise HTTPException(status_code=404, detail="Company not found")
+    if result.status != CompanyStatus.public and not result.role:
+        raise HTTPException(status_code=400, detail="Not enough permissions")
+
+    return EmployeeAccess(id=token_data.sub, is_superuser=result.is_superuser, role=None if not result.role else result.role)
+
+
+CurrentEmployee = Annotated[EmployeeAccess, Depends(get_current_employee)]
+
+
 def get_current_active_superuser(current_user: CurrentUser) -> User:
     if not current_user.is_superuser:
         raise HTTPException(
             status_code=403, detail="The user doesn't have enough privileges"
         )
     return current_user
-
-
-def verify_company_access(
-    company_id: uuid.UUID,
-    current_user: CurrentUser,
-    session: SessionDep
-) -> CompanyRole | None:
-
-    if current_user.is_superuser:
-        if company_exist(session=session, id=company_id):
-            return CompanyRole.owner
-        else:
-            raise HTTPException(status_code=404, detail="Company not found")
-    else:
-        statement = select(Company.status, UserCompanyLink.role).\
-            outerjoin(UserCompanyLink, and_(
-                UserCompanyLink.company_id == Company.id,
-                UserCompanyLink.user_id == current_user.id
-            )).\
-            where(Company.id == company_id)
-        result = session.exec(statement).first()
-
-        if not result:
-            raise HTTPException(status_code=404, detail="Company not found")
-
-        if result.status != CompanyStatus.public and not result.role:
-            raise HTTPException(
-                status_code=400, detail="Not enough permissions")
-
-        return result.role
-
-
-CompanyRoleDep = Annotated[CompanyRole | None, Depends(verify_company_access)]

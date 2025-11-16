@@ -93,6 +93,22 @@ class UsersPublic(SQLModel):
     data: list[UserPublic]
     count: int
 
+
+class EmployeePublic(UserPublic):
+    role: CompanyRole
+
+
+class EmployeesPublic(SQLModel):
+    data: list[EmployeePublic]
+    count: int
+
+
+class EmployeeAccess:
+    id: uuid.UUID | None
+    is_superuser: bool = False
+    role: CompanyRole | None
+
+
 # Item Model -------------------------------------------------
 
 # Shared properties

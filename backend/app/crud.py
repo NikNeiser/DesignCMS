@@ -13,8 +13,7 @@ from app.models import (
     Company,
     CompanyRole,
     UserCompanyLink,
-    CompanyStatus,
-    AccessStatus
+    CompanyStatus
 )
 
 

@@ -1,13 +1,13 @@
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Depends
-from sqlmodel import func, select, exists, or_, delete
-from sqlalchemy.orm import noload, selectinload
+from fastapi import APIRouter, HTTPException
+from sqlmodel import func, select, delete
+from sqlalchemy.orm import noload
 from app import crud
 
-from app.api.deps import CurrentUser, SessionDep, CompanyRoleDep
-from app.models import Company, CompanyStatus, CompanysPublic, CompanyPublic, CompanyCreate, CompanyUpdate, UserCompanyLink, CompanyRole, Message, User
+from app.api.deps import CurrentUser, SessionDep, CurrentEmployee
+from app.models import Company, EmployeesPublic, EmployeePublic, CompanyPublic, CompanyCreate, CompanyUpdate, UserCompanyLink, CompanyRole, Message, User
 
 router = APIRouter(prefix="/company", tags=["company"])
 
@@ -37,7 +37,7 @@ def create_company(
 
 
 @router.get("/{company_id}", response_model=CompanyPublic)
-def read_company(session: SessionDep, company_id: uuid.UUID, role: CompanyRoleDep) -> Any:
+def read_company(session: SessionDep, company_id: uuid.UUID, current_employee: CurrentEmployee) -> Any:
     """
     Get Company by ID.
     """
@@ -45,20 +45,46 @@ def read_company(session: SessionDep, company_id: uuid.UUID, role: CompanyRoleDe
     return company
 
 
+@router.get("/{company_id}/employees", response_model=EmployeesPublic)
+def read_company(session: SessionDep, company_id: uuid.UUID, current_employee: CurrentEmployee, skip: int = 0, limit: int = 100) -> Any:
+    """
+    Get Company by ID.
+    """
+    count_statement = (
+        select(func.count())
+        .select_from(UserCompanyLink)
+        .where(UserCompanyLink.company_id == company_id)
+    )
+    count = session.exec(count_statement).one()
+
+    results = session.exec(
+        select(User.id,
+               User.email,
+               User.full_name,
+               UserCompanyLink.role.label("role"))
+        .join(UserCompanyLink)
+        .where(UserCompanyLink.company_id == company_id).offset(skip)
+        .limit(limit)
+    ).all()
+
+    employees = [EmployeePublic(**row._mapping) for row in results]
+
+    return EmployeesPublic(data=employees, count=count)
+
+
 @router.put("/{company_id}", response_model=CompanyPublic)
 def update_company(
     *,
     session: SessionDep,
-    current_user: CurrentUser,
     company_id: uuid.UUID,
     company_in: CompanyUpdate,
-    role: CompanyRoleDep
+    current_employee: CurrentEmployee
 ) -> Any:
     """
     Update an company.
     """
 
-    if not role or role != CompanyRole.owner:
+    if not current_employee.role or current_employee.role != CompanyRole.owner:
         raise HTTPException(
             status_code=400, detail="Not enough permissions")
 
@@ -86,12 +112,12 @@ def update_company(
 
 @router.delete("/{company_id}")
 def delete_company(
-    session: SessionDep, current_user: CurrentUser, company_id: uuid.UUID, role: CompanyRoleDep
+    session: SessionDep, company_id: uuid.UUID, current_employee: CurrentEmployee
 ) -> Message:
     """
     Delete an Company.
     """
-    if not role or role != CompanyRole.owner:
+    if not current_employee.role or current_employee.role != CompanyRole.owner:
         raise HTTPException(
             status_code=400, detail="Not enough permissions")
 
