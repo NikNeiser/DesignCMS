@@ -34,14 +34,19 @@ class UserCompanyLink(SQLModel, table=True):
     role: CompanyRole = CompanyRole.reader
 
 
+class UserCompanyLinkCreate(SQLModel):
+    user_id: uuid.UUID
+    role: CompanyRole = CompanyRole.reader
+
 # User Model -------------------------------------------------
 
 # Shared properties
+
+
 class UserBase(SQLModel):
     email: EmailStr = Field(unique=True, index=True, max_length=255)
     is_active: bool = True
     is_superuser: bool = False
-    is_delited: bool = Field(default=False)
     full_name: str | None = Field(default=None, max_length=255)
 
 
@@ -77,6 +82,7 @@ class UpdatePassword(SQLModel):
 class User(UserBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     hashed_password: str
+    is_delited: bool = Field(default=False)
     items: list["Item"] = Relationship(
         back_populates="owner", cascade_delete=True)
     design_items: list["DesignItem"] = Relationship(back_populates="creator")
