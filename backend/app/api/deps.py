@@ -47,8 +47,7 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
         .options(
             noload(User.items),
             noload(User.companies),
-            noload(User.design_items),
-            noload(User.is_delited)
+            noload(User.design_items)
         )
     ).first()
     # user = session.get(User, token_data.sub)

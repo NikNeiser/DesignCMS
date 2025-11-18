@@ -109,7 +109,7 @@ class EmployeesPublic(SQLModel):
     count: int
 
 
-class EmployeeAccess:
+class EmployeeAccess(SQLModel):
     id: uuid.UUID | None
     is_superuser: bool = False
     role: CompanyRole | None
