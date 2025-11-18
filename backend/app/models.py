@@ -4,6 +4,7 @@ import enum
 from datetime import date
 from pydantic import EmailStr
 from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy import Index, text
 
 
 @enum.unique
@@ -299,12 +300,16 @@ class Tag(TagBase, table=True):
     design_items: list["DesignItem"] = Relationship(
         back_populates="tags", link_model=TagItemLink)
 
+    __table_args__ = (
+        Index('idx_tag_title_lower', text('LOWER(title)'), unique=True),
+    )
 
 # Properties to return via API, id is always required
+
+
 class TagPublic(TagBase):
     id: uuid.UUID
 
 
 class TagsPublic(SQLModel):
     data: list[TagPublic]
-    count: int
