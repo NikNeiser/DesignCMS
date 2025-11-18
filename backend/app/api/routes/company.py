@@ -7,7 +7,18 @@ from sqlalchemy.orm import noload
 from app import crud
 
 from app.api.deps import CurrentUser, SessionDep, CurrentEmployee
-from app.models import Company, EmployeesPublic, EmployeePublic, CompanyPublic, CompanyCreate, CompanyUpdate, UserCompanyLink, CompanyRole, Message, User
+from app.models import (Company,
+                        EmployeesPublic,
+                        EmployeePublic,
+                        CompanyPublic,
+                        CompanyCreate,
+                        CompanyUpdate,
+                        UserCompanyLink,
+                        CompanyRole,
+                        Message,
+                        User,
+                        Tag,
+                        TagsPublic)
 
 router = APIRouter(prefix="/company", tags=["company"])
 
@@ -46,9 +57,9 @@ def read_company(session: SessionDep, company_id: uuid.UUID, current_employee: C
 
 
 @router.get("/{company_id}/employees", response_model=EmployeesPublic)
-def read_company(session: SessionDep, company_id: uuid.UUID, current_employee: CurrentEmployee, skip: int = 0, limit: int = 100) -> Any:
+def read_company_employees(session: SessionDep, company_id: uuid.UUID, current_employee: CurrentEmployee, skip: int = 0, limit: int = 100) -> Any:
     """
-    Get Company by ID.
+    Get Company Employees.
     """
     count_statement = (
         select(func.count())
@@ -70,6 +81,24 @@ def read_company(session: SessionDep, company_id: uuid.UUID, current_employee: C
     employees = [EmployeePublic(**row._mapping) for row in results]
 
     return EmployeesPublic(data=employees, count=count)
+
+
+@router.get("/{company_id}/tags", response_model=TagsPublic)
+def read_company_tags(session: SessionDep, company_id: uuid.UUID, current_employee: CurrentEmployee) -> Any:
+    """
+    Get Company Tags.
+    """
+
+    results = session.exec(
+        select(Tag)
+        .where(Tag.company_id == company_id)
+        .options(
+            noload(Tag.company),
+            noload(Tag.design_items)
+        )
+    ).all()
+
+    return TagsPublic(data=results)
 
 
 @router.put("/{company_id}", response_model=CompanyPublic)
